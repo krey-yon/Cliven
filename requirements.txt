@@ -4,4 +4,3 @@ pdfplumber
 sentence-transformers
 chromadb
 langchain
-openai

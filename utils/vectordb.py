@@ -149,6 +149,60 @@ class ChromaDBManager:
             logger.error(f"Search failed: {e}")
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
+    def search_similar_chunks(
+        self, query: str, max_results: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for similar chunks using the query
+
+        Args:
+            query: Search query
+            max_results: Maximum number of results to return
+
+        Returns:
+            List of similar chunks with metadata
+        """
+        try:
+            if not self.collection:
+                raise Exception("Collection not initialized")
+
+            # Create embedding for the query (you'll need to import the embedder)
+            from utils.embedder import TextEmbedder
+
+            embedder = TextEmbedder()
+            query_embedding = embedder.create_embeddings([query])[0]
+
+            # Query the collection
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=max_results,
+                include=["documents", "metadatas", "distances"],
+            )
+
+            chunks = []
+            if results["documents"] and results["documents"][0]:
+                for i, doc in enumerate(results["documents"][0]):
+                    chunk = {
+                        "text": doc,
+                        "metadata": (
+                            results["metadatas"][0][i]
+                            if results["metadatas"] and results["metadatas"][0]
+                            else {}
+                        ),
+                        "distance": (
+                            results["distances"][0][i]
+                            if results["distances"] and results["distances"][0]
+                            else 0.0
+                        ),
+                    }
+                    chunks.append(chunk)
+
+            return chunks
+
+        except Exception as e:
+            logger.error(f"Error searching similar chunks: {e}")
+            return []
+
     def list_documents(self) -> Dict[str, Any]:
         """
         List all documents in the collection

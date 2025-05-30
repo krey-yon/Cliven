@@ -205,7 +205,7 @@ def handle_chat_existing() -> None:
     """Handle chat with existing documents"""
     try:
         from utils.vectordb import ChromaDBManager
-        from chat import ChatEngine
+        from main.chat import ChatEngine
 
         print("🚀 Starting chat with existing documents...")
         print("=" * 50)
@@ -256,7 +256,7 @@ def handle_chat_with_pdf(pdf_path: str) -> None:
         from utils.parser import parse_pdf_with_chunking
         from utils.embedder import create_embeddings_for_chunks
         from utils.vectordb import store_embeddings_to_chromadb
-        from chat import ChatEngine
+        from main.chat import ChatEngine
 
         print("🚀 Starting Cliven REPL...")
         print("=" * 50)
@@ -370,7 +370,7 @@ def handle_list() -> None:
 def handle_status() -> None:
     """Handle system status check"""
     try:
-        from chat import ChatEngine
+        from main.chat import ChatEngine
         from rich.console import Console
         from rich.panel import Panel
         from rich.text import Text

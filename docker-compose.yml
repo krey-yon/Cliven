@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    networks:
+      - cliven-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cliven_ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - cliven-network
+    # Just run the server, no shell wrapper
+    command: serve
+
+networks:
+  cliven-network:
+    driver: bridge

@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / compiled files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+venv/
+env/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Log files
+*.log
+
+# Cache files
+*.cache
+*.pytest_cache/
+
+# Package builds
+build/
+dist/
+*.egg-info/
+
+# VS Code settings
+.vscode/
+
+# MacOS files
+.DS_Store
+
+# Pipenv & Poetry
+Pipfile
+Pipfile.lock
+poetry.lock
+
+# System-specific files
+Thumbs.db
+
+# Secret files (adjust carefully)
+.env
+*.key
+
+.venv

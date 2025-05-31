@@ -12,6 +12,8 @@ Cliven is a command-line tool that allows you to process PDF documents and have 
 - 🐳 **Docker Ready**: Easy setup with Docker Compose
 - 💾 **Local Storage**: All data stays on your machine
 - 🎯 **Simple CLI**: Easy-to-use command-line interface
+- 🚀 **Model Selection**: Support for both lightweight (TinyLlama) and high-performance (Mistral) models
+- 📊 **Rich UI**: Beautiful terminal interface with progress indicators
 
 ## Quick Start 🚀
 
@@ -31,13 +33,21 @@ pip install -e .
 ### 3. Start Services with Docker
 
 ```bash
+# Start with lightweight model (tinyllama:chat)
 cliven docker start
+
+# OR start with high-performance model (mistral:7b)
+cliven docker start --BP
+# or
+cliven docker start --better-performance
 ```
 
 This will:
+
 - Start ChromaDB on port 8000
 - Start Ollama on port 11434
-- Pull the `tinyllama:chat` model (may take 20-30 minutes)
+- Pull the `gemma2:2b` model (default) or `gemma3:4b` model (with --BP flag)
+- May take several minutes depending on model and connection speed
 
 ### 4. Process Your First PDF
 
@@ -48,7 +58,11 @@ cliven ingest path/to/your/document.pdf
 ### 5. Start Chatting
 
 ```bash
+# Chat with existing documents
 cliven chat
+
+# OR specify a model
+cliven chat --model gemma3:2b
 ```
 
 ## Usage 📖
@@ -60,13 +74,13 @@ cliven chat
 cliven
 
 # Process and store a PDF
-cliven ingest <pdf_path>
+cliven ingest <pdf_path> [--chunk-size SIZE] [--overlap SIZE]
 
 # Start interactive chat with existing documents
-cliven chat
+cliven chat [--model MODEL_NAME] [--max-results COUNT]
 
 # Process PDF and start chat immediately
-cliven chat --repl <pdf_path>
+cliven chat --repl <pdf_path> [--model MODEL_NAME]
 
 # List all processed documents
 cliven list
@@ -75,34 +89,61 @@ cliven list
 cliven delete <doc_id>
 
 # Clear all documents
-cliven clear
+cliven clear [--confirm]
 
 # Check system status
 cliven status
 
 # Manage Docker services
-cliven docker start    # Start services
-cliven docker stop     # Stop services
-cliven docker logs     # View logs
+cliven docker start [--BP | --better-performance]  # Start services
+cliven docker stop                                 # Stop services
+cliven docker logs                                 # View logs
 ```
 
 ### Examples
 
 ```bash
-# Process a manual
-cliven ingest ./documents/user-manual.pdf
+# Process a manual with custom chunking
+cliven ingest ./documents/user-manual.pdf --chunk-size 1500 --overlap 300
 
 # Start chatting with all processed documents
 cliven chat
 
-# Process and chat with a specific PDF
-cliven chat --repl ./research-paper.pdf
+# Chat with specific model
+cliven chat --model mistral:7b
+
+# Process and chat with a specific PDF using high-performance model
+cliven chat --repl ./research-paper.pdf --model mistral:7b
 
 # Check what documents are stored
 cliven list
 
 # Check if services are running
 cliven status
+
+# Clear all documents without confirmation
+cliven clear --confirm
+
+# Start services with better performance model
+cliven docker start --BP
+```
+
+### Model Options
+
+Cliven supports multiple AI models:
+
+- **gemma2:2b**: Lightweight, fast responses (~1GB model)
+- **gemma3:4b**: High-performance, better quality responses (~4GB model)
+
+The system automatically selects the best available model, or you can specify one:
+
+```bash
+# Auto-select best available model
+cliven chat
+
+# Use specific model
+cliven chat --model gemma3:4b
+cliven chat --model gemma2:2b
 ```
 
 ## Architecture 🏗️
@@ -113,7 +154,7 @@ Cliven uses a modern RAG (Retrieval-Augmented Generation) architecture:
 2. **Text Chunker**: Splits documents into overlapping chunks using LangChain
 3. **Embedder**: Creates embeddings using `BAAI/bge-small-en-v1.5`
 4. **Vector Database**: Stores embeddings in ChromaDB
-5. **Chat Engine**: Handles queries and generates responses
+5. **Chat Engine**: Handles queries and generates responses with Ollama
 
 ## Components 🔧
 
@@ -121,16 +162,18 @@ Cliven uses a modern RAG (Retrieval-Augmented Generation) architecture:
 
 - **ChromaDB**: Vector database for storing document embeddings
 - **Ollama**: Local LLM inference server
-- **TinyLlama**: Lightweight chat model for responses
+- **Gemma2:2b**: Lightweight chat model for fast responses
+- **Gemma3:4b**: High-performance model for better quality responses
 
 ### Key Files
 
-- `main/cliven.py`: Main CLI application
-- `main/chat.py`: Chat engine with RAG functionality
-- `utils/parser.py`: PDF text extraction
-- `utils/embedder.py`: Text embedding generation
-- `utils/vectordb.py`: ChromaDB operations
-- `docker-compose.yml`: Service orchestration
+- `main/cliven.py`: Main CLI application with argument parsing
+- `main/chat.py`: Chat engine with RAG functionality and model management
+- `utils/parser.py`: PDF text extraction and chunking
+- `utils/embedder.py`: Text embedding generation using sentence transformers
+- `utils/vectordb.py`: ChromaDB operations and vector storage
+- `utils/chunker.py`: Text chunking utilities
+- `docker-compose.yml`: Service orchestration configuration
 
 ## System Requirements 📋
 
@@ -138,8 +181,9 @@ Cliven uses a modern RAG (Retrieval-Augmented Generation) architecture:
 
 - Python 3.8+
 - Docker & Docker Compose
-- 4GB+ RAM (for TinyLlama model)
-- 2GB+ disk space
+- 2GB+ RAM (for TinyLlama model)
+- 8GB+ RAM (for Mistral 7B model)
+- 4GB+ disk space
 
 ### Python Dependencies
 
@@ -198,10 +242,27 @@ OLLAMA_PORT=11434
 cliven ingest document.pdf --chunk-size 1500 --overlap 300
 
 # Use different model
-cliven chat --model llama2:chat
+cliven chat --model mistral:7b
 
 # Adjust context window
 cliven chat --max-results 10
+
+# Skip confirmation for clearing
+cliven clear --confirm
+```
+
+### Model Management
+
+```bash
+# Check available models
+cliven status
+
+# Manually pull models
+docker exec -it cliven_ollama ollama pull mistral:7b
+docker exec -it cliven_ollama ollama pull tinyllama:chat
+
+# List downloaded models
+docker exec -it cliven_ollama ollama list
 ```
 
 ## Troubleshooting 🔧
@@ -209,83 +270,79 @@ cliven chat --max-results 10
 ### Common Issues
 
 1. **Docker services not starting**
+
    ```bash
    # Check Docker daemon
    docker info
-   
+
    # View service logs
    cliven docker logs
-   ```
 
-2. **Model not found**
-   ```bash
-   # Manually pull model
-   docker exec -it cliven_ollama ollama pull tinyllama:chat
-   ```
-
-3. **ChromaDB connection failed**
-   ```bash
-   # Check service status
-   cliven status
-   
    # Restart services
    cliven docker stop
    cliven docker start
    ```
 
+2. **Model not found**
+
+   ```bash
+   # Check available models
+   cliven status
+
+   # Manually pull model
+   docker exec -it cliven_ollama ollama pull mistral:7b
+   docker exec -it cliven_ollama ollama pull tinyllama:chat
+   ```
+
+3. **ChromaDB connection failed**
+
+   ```bash
+   # Check service status
+   cliven status
+
+   # Restart services
+   cliven docker stop
+   cliven docker start
+
+   # Check logs
+   cliven docker logs
+   ```
+
 4. **PDF processing errors**
+
    ```bash
    # Check file path and permissions
    dir path\to\file.pdf
-   
+
    # Try with different chunk size
    cliven ingest file.pdf --chunk-size 500
+
+   # Check for PDF corruption
+   cliven ingest file.pdf --chunk-size 2000 --overlap 100
+   ```
+
+5. **Model performance issues**
+
+   ```bash
+   # Switch to lightweight model
+   cliven chat --model gemma2:2b
+
+   # Or use high-performance model
+   cliven chat --model gemma3:4b
+
+   # Check system resources
+   cliven status
    ```
 
 ### Performance Tips
 
+- Use `gemma2:2b` for faster responses on limited hardware
+- Use `gemma3:4b` for better quality responses with sufficient RAM
 - Use smaller chunk sizes for better context precision
 - Increase overlap for better continuity
 - Monitor RAM usage with large PDFs
 - Use SSD storage for better ChromaDB performance
 
-## Development 👨‍💻
-
-### Setup Development Environment
-
-```bash
-git clone https://github.com/krey-yon/cliven.git
-cd cliven
-
-# Install with dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Code formatting
-black .
-isort .
-flake8 .
-```
-
-### Project Structure
-
-```
-cliven/
-├── main/
-│   ├── __init__.py
-│   ├── cliven.py      # Main CLI application
-│   └── chat.py        # Chat engine
-├── utils/
-│   ├── parser.py      # PDF processing
-│   ├── embedder.py    # Text embeddings
-│   ├── vectordb.py    # ChromaDB operations
-│   └── chunker.py     # Text chunking
-├── docker-compose.yml # Service configuration
-├── setup.py          # Package configuration
-└── requirements.txt   # Dependencies
-```
 
 ## Contributing 🤝
 
@@ -306,6 +363,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Sentence Transformers](https://www.sbert.net/) for embeddings
 - [LangChain](https://langchain.com/) for text processing
 - [Rich](https://rich.readthedocs.io/) for beautiful terminal output
+- [PDFplumber](https://github.com/jsvine/pdfplumber) for PDF text extraction
 
 ## Support 💬
 
@@ -317,4 +375,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **Made with ❤️ by [Kreyon](https://github.com/krey-yon)**
 
-*Chat with your PDFs locally and securely!*
+_Chat with your PDFs locally and securely!_

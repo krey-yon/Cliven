@@ -1,14 +1,9 @@
 import chromadb
 from chromadb.config import Settings
 from typing import List, Dict, Any, Optional
-import logging
 import os
 from pathlib import Path
 import time
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class ChromaDBManager:
@@ -38,20 +33,16 @@ class ChromaDBManager:
             chroma_host = os.getenv("CHROMA_HOST", self.host)
             chroma_port = int(os.getenv("CHROMA_PORT", self.port))
 
-            logger.info(f"Connecting to ChromaDB at {chroma_host}:{chroma_port}")
-
             # Connect to ChromaDB
             self.client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
 
             # Test connection
             self.client.heartbeat()
-            logger.info("Successfully connected to ChromaDB")
 
             # Get or create collection
             self._get_or_create_collection()
 
         except Exception as e:
-            logger.error(f"Failed to connect to ChromaDB: {e}")
             raise Exception(f"ChromaDB connection failed: {e}")
 
     def _get_or_create_collection(self):
@@ -60,17 +51,14 @@ class ChromaDBManager:
             # Try to get existing collection
             try:
                 self.collection = self.client.get_collection(name=self.collection_name)
-                logger.info(f"Using existing collection: {self.collection_name}")
             except:
                 # Create new collection if it doesn't exist
                 self.collection = self.client.create_collection(
                     name=self.collection_name,
                     metadata={"description": "PDF document chunks with embeddings"},
                 )
-                logger.info(f"Created new collection: {self.collection_name}")
 
         except Exception as e:
-            logger.error(f"Failed to get/create collection: {e}")
             raise Exception(f"Collection setup failed: {e}")
 
     def store_embeddings(self, embedding_data: Dict[str, Any]) -> bool:
@@ -102,18 +90,14 @@ class ChromaDBManager:
             if not (len(ids) == len(texts) == len(embeddings) == len(metadatas)):
                 raise Exception("Inconsistent data lengths")
 
-            logger.info(f"Storing {len(ids)} embeddings in ChromaDB")
-
             # Store in ChromaDB
             self.collection.add(
                 ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas
             )
 
-            logger.info(f"Successfully stored {len(ids)} embeddings")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to store embeddings: {e}")
             return False
 
     def search_similar(
@@ -134,19 +118,15 @@ class ChromaDBManager:
             if not self.collection:
                 raise Exception("Collection not initialized")
 
-            logger.info(f"Searching for similar documents: '{query_text[:50]}...'")
-
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n_results,
                 include=["documents", "metadatas", "distances"],
             )
 
-            logger.info(f"Found {len(results['documents'][0])} similar documents")
             return results
 
         except Exception as e:
-            logger.error(f"Search failed: {e}")
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
     def search_similar_chunks(
@@ -200,7 +180,6 @@ class ChromaDBManager:
             return chunks
 
         except Exception as e:
-            logger.error(f"Error searching similar chunks: {e}")
             return []
 
     def list_documents(self) -> Dict[str, Any]:
@@ -234,7 +213,6 @@ class ChromaDBManager:
             }
 
         except Exception as e:
-            logger.error(f"Failed to list documents: {e}")
             return {"total_chunks": 0, "unique_documents": 0, "source_files": []}
 
     def delete_document(self, source_file: str) -> bool:
@@ -257,19 +235,14 @@ class ChromaDBManager:
             )
 
             if not results["ids"]:
-                logger.warning(f"No chunks found for document: {source_file}")
                 return False
 
             # Delete all chunks
             self.collection.delete(ids=results["ids"])
 
-            logger.info(
-                f"Deleted {len(results['ids'])} chunks from document: {source_file}"
-            )
             return True
 
         except Exception as e:
-            logger.error(f"Failed to delete document {source_file}: {e}")
             return False
 
     def clear_collection(self) -> bool:
@@ -287,17 +260,14 @@ class ChromaDBManager:
             all_data = self.collection.get()
 
             if not all_data["ids"]:
-                logger.info("Collection is already empty")
                 return True
 
             # Delete all
             self.collection.delete(ids=all_data["ids"])
 
-            logger.info(f"Cleared {len(all_data['ids'])} chunks from collection")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to clear collection: {e}")
             return False
 
     def get_collection_stats(self) -> Dict[str, Any]:
@@ -314,7 +284,7 @@ class ChromaDBManager:
             count = self.collection.count()
 
             if count == 0:
-                return {"total_chunks": 0, "documents": []}
+                return {"total_chunks": 0, "total_documents": 0, "documents": {}}
 
             # Get all metadata to analyze
             all_data = self.collection.get(include=["metadatas"])
@@ -340,7 +310,6 @@ class ChromaDBManager:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get collection stats: {e}")
             return {"error": str(e)}
 
     def health_check(self) -> Dict[str, Any]:
@@ -403,7 +372,6 @@ def store_embeddings_to_chromadb(
         db_manager = ChromaDBManager(host=host, port=port)
         return db_manager.store_embeddings(embedding_data)
     except Exception as e:
-        logger.error(f"Failed to store embeddings: {e}")
         return False
 
 

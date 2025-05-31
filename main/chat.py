@@ -1,14 +1,49 @@
 import requests
 import json
-import logging
 from typing import List, Dict, Any, Optional
-from utils.vectordb import ChromaDBManager
-from utils.embedder import TextEmbedder
+import subprocess
 import os
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+
+def get_available_ollama_models() -> List[str]:
+    """Get list of available models from Ollama"""
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "cliven_ollama", "ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")[1:]  # Skip header
+            models = []
+            for line in lines:
+                if line.strip():
+                    model_name = line.split()[0]  # First column is model name
+                    models.append(model_name)
+            return models
+        return []
+    except Exception:
+        return []
+
+
+def select_best_available_ollama_model() -> str:
+    """Select the best available model based on priority"""
+    available_models = get_available_ollama_models()
+
+    # Priority order: mistral:7b first (better performance), then gemma2:2b
+    priority_models = ["mistral:7b", "gemma2:2b"]
+
+    for model in priority_models:
+        if model in available_models:
+            return model
+
+    # If none of the priority models are available, return first available or default
+    if available_models:
+        return available_models[0]
+
+    return "gemma2:2b"  # Default fallback
 
 
 class ChatEngine:
@@ -18,7 +53,7 @@ class ChatEngine:
 
     def __init__(
         self,
-        model_name: str = "tinyllama:chat",
+        model_name: Optional[str] = None,  # Changed to Optional
         ollama_host: str = "localhost",
         ollama_port: int = 11434,
         chromadb_host: str = "localhost",
@@ -29,14 +64,24 @@ class ChatEngine:
         Initialize the chat engine
 
         Args:
-            model_name (str): Ollama model name
+            model_name (Optional[str]): Ollama model name (auto-selected if None)
             ollama_host (str): Ollama host (use 'ollama' in Docker)
             ollama_port (int): Ollama port
             chromadb_host (str): ChromaDB host (use 'chromadb' in Docker)
             chromadb_port (int): ChromaDB port
             max_context_chunks (int): Maximum number of context chunks to retrieve
         """
-        self.model_name = model_name
+        # Auto-select model if not specified
+        if model_name is None:
+            self.model_name = select_best_available_ollama_model()
+        else:
+            # Check if specified model is available
+            available_models = get_available_ollama_models()
+            if model_name in available_models:
+                self.model_name = model_name
+            else:
+                self.model_name = select_best_available_ollama_model()
+
         self.ollama_host = os.getenv("OLLAMA_HOST", ollama_host)
         self.ollama_port = int(os.getenv("OLLAMA_PORT", ollama_port))
         self.max_context_chunks = max_context_chunks
@@ -53,16 +98,26 @@ class ChatEngine:
         """Initialize ChromaDB and embedder components"""
         try:
             # Initialize ChromaDB manager
+            from utils.vectordb import ChromaDBManager
+            from utils.embedder import TextEmbedder
+
             self.db_manager = ChromaDBManager(host=chromadb_host, port=chromadb_port)
-            logger.info("ChromaDB manager initialized")
 
             # Initialize embedder for query embeddings
             self.embedder = TextEmbedder()
-            logger.info("Text embedder initialized")
 
         except Exception as e:
-            logger.error(f"Failed to initialize components: {e}")
             raise Exception(f"Chat engine initialization failed: {e}")
+
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about the current model"""
+        available_models = get_available_ollama_models()
+        return {
+            "current_model": self.model_name,
+            "available_models": available_models,
+            "model_available": self.model_name in available_models,
+            "model_priority": "high" if self.model_name == "mistral:7b" else "standard",
+        }
 
     def _get_relevant_context(self, question: str) -> str:
         """
@@ -103,11 +158,9 @@ class ChatEngine:
             if not context.strip():
                 return "No relevant context found in the uploaded documents."
 
-            logger.info(f"Retrieved {len(context_chunks)} relevant context chunks")
             return context
 
         except Exception as e:
-            logger.error(f"Failed to get relevant context: {e}")
             return "Error retrieving context from documents."
 
     def _generate_response(self, context: str, question: str) -> str:
@@ -125,33 +178,49 @@ class ChatEngine:
             # Create the prompt
             prompt = self._create_prompt(context, question)
 
+            # Adjust parameters based on model
+            if self.model_name == "mistral:7b":
+                # Higher performance settings for mistral
+                options = {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "num_ctx": 8192,  # Higher context window
+                    "repeat_penalty": 1.1,
+                }
+                timeout = 120  # Longer timeout for larger model
+            else:
+                # Standard settings for smaller models
+                options = {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "num_ctx": 4096,
+                    "repeat_penalty": 1.1,
+                }
+                timeout = 60
+
             # Prepare request payload
             payload = {
                 "model": self.model_name,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0.7, "top_p": 0.9, "num_ctx": 4096},
+                "options": options,
             }
 
             # Make request to Ollama
             response = requests.post(
-                f"{self.ollama_url}/api/generate", json=payload, timeout=60
+                f"{self.ollama_url}/api/generate", json=payload, timeout=timeout
             )
 
             if response.status_code == 200:
                 result = response.json()
                 answer = result.get("response", "No response generated.")
-                logger.info("Successfully generated response")
                 return answer.strip()
             else:
-                logger.error(f"Ollama request failed: {response.status_code}")
                 return "Sorry, I couldn't generate a response. Please try again."
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error with Ollama: {e}")
             return "Sorry, I'm having trouble connecting to the AI model. Please check if Ollama is running."
         except Exception as e:
-            logger.error(f"Error generating response: {e}")
             return "Sorry, I encountered an error while generating the response."
 
     def _create_prompt(self, context: str, question: str) -> str:
@@ -170,7 +239,21 @@ class ChatEngine:
             "Relevance:", "Relevance:"
         )
 
-        prompt = f"""Answer the question using only the information provided below. Give a direct, helpful response.
+        # Enhanced prompt for better models
+        if self.model_name == "mistral:7b":
+            prompt = f"""You are a helpful AI assistant analyzing PDF documents. Based on the provided context, answer the user's question accurately and comprehensively.
+
+Context from documents:
+{clean_context}
+
+Question: {question}
+
+Provide a detailed, accurate answer based only on the information in the context above. If the context doesn't contain enough information to fully answer the question, acknowledge this limitation.
+
+Answer:"""
+        else:
+            # Simpler prompt for smaller models
+            prompt = f"""Answer the question using only the information provided below. Give a direct, helpful response.
 
 {clean_context}
 
@@ -198,8 +281,6 @@ Answer the question directly without repeating the question or mentioning instru
                     "error": None,
                 }
 
-            logger.info(f"Processing question: {question[:100]}...")
-
             # Get relevant context
             context = self._get_relevant_context(question)
 
@@ -212,11 +293,11 @@ Answer the question directly without repeating the question or mentioning instru
                 != "No relevant context found in the uploaded documents.",
                 "context_chunks": self.max_context_chunks,
                 "model_used": self.model_name,
+                "model_info": self.get_model_info(),
                 "error": None,
             }
 
         except Exception as e:
-            logger.error(f"Error in ask method: {e}")
             return {
                 "answer": "Sorry, I encountered an error while processing your question.",
                 "context_found": False,
@@ -227,7 +308,15 @@ Answer the question directly without repeating the question or mentioning instru
         """
         Interactive chat session
         """
+        model_info = self.get_model_info()
+        performance_indicator = "🚀" if model_info["model_priority"] == "high" else "⚡"
+
         print("🤖 Cliven Chat - Ask questions about your PDF documents!")
+        print(f"{performance_indicator} Using model: {self.model_name}")
+        if model_info["model_priority"] == "high":
+            print("   🎯 High-performance mode for better responses")
+        else:
+            print("   ⚡ Fast response mode")
         print("Type 'quit', 'exit', or 'bye' to end the conversation.\n")
 
         while True:
@@ -318,12 +407,12 @@ Answer the question directly without repeating the question or mentioning instru
 
 
 # Convenience function
-def create_chat_engine(model_name: str = "tinyllama:chat") -> ChatEngine:
+def create_chat_engine(model_name: Optional[str] = None) -> ChatEngine:
     """
-    Create a chat engine instance
+    Create a chat engine instance with intelligent model selection
 
     Args:
-        model_name (str): Ollama model name
+        model_name (Optional[str]): Specific model name (auto-selected if None)
 
     Returns:
         ChatEngine: Initialized chat engine

@@ -1,16 +1,12 @@
 import argparse
+import os
 import sys
-import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 def show_welcome():
@@ -42,26 +38,6 @@ Examples:
     )
 
 
-def set_quiet_mode(enabled: bool = True):
-    """Enable/disable quiet mode for chat (hide verbose logs)"""
-    if enabled:
-        # Suppress verbose logs from dependencies
-        logging.getLogger("chat").setLevel(logging.ERROR)
-        logging.getLogger("utils.embedder").setLevel(logging.ERROR)
-        logging.getLogger("utils.vectordb").setLevel(logging.ERROR)
-        logging.getLogger("httpx").setLevel(logging.ERROR)
-        logging.getLogger("chromadb").setLevel(logging.ERROR)
-        logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
-    else:
-        # Restore normal logging
-        logging.getLogger("chat").setLevel(logging.INFO)
-        logging.getLogger("utils.embedder").setLevel(logging.INFO)
-        logging.getLogger("utils.vectordb").setLevel(logging.INFO)
-        logging.getLogger("httpx").setLevel(logging.INFO)
-        logging.getLogger("chromadb").setLevel(logging.INFO)
-        logging.getLogger("sentence_transformers").setLevel(logging.INFO)
-
-
 def start_interactive_chat(chat_engine, pdf_name: str = "existing documents") -> None:
     """
     Start the interactive chat loop
@@ -72,9 +48,6 @@ def start_interactive_chat(chat_engine, pdf_name: str = "existing documents") ->
     """
     print(f"\n🤖 Ready to answer questions about: {pdf_name}")
     print()
-
-    # Enable quiet mode for chat
-    set_quiet_mode(True)
 
     while True:
         try:
@@ -93,7 +66,7 @@ def start_interactive_chat(chat_engine, pdf_name: str = "existing documents") ->
             # Process question
             print("🤔 Thinking...")
 
-            # Get response from chat engine (logs are now suppressed)
+            # Get response from chat engine
             response = chat_engine.ask(question)
 
             # Display answer
@@ -110,9 +83,6 @@ def start_interactive_chat(chat_engine, pdf_name: str = "existing documents") ->
             break
         except Exception as e:
             print(f"❌ Error processing question: {e}\n")
-
-    # Restore normal logging when exiting
-    set_quiet_mode(False)
 
 
 def handle_ingest(pdf_path: str, chunk_size: int, overlap: int) -> bool:
@@ -197,273 +167,53 @@ def handle_ingest(pdf_path: str, chunk_size: int, overlap: int) -> bool:
 
     except Exception as e:
         console.print(f"\n❌ Error processing PDF: {e}", style="red")
-        logger.error(f"Error in handle_ingest: {e}")
         return False
 
 
-def handle_chat_existing() -> None:
-    """Handle chat with existing documents"""
+def get_available_models() -> List[str]:
+    """Get list of available models from Ollama"""
+    import subprocess
+
     try:
-        from utils.vectordb import ChromaDBManager
-        from main.chat import ChatEngine
-
-        print("🚀 Starting chat with existing documents...")
-        print("=" * 50)
-
-        # Initialize ChromaDB manager to check existing documents
-        # Use localhost instead of chromadb for local development
-        db_manager = ChromaDBManager(host="localhost", port=8000)
-
-        # Check if there are existing documents
-        stats = db_manager.get_collection_stats()
-
-        if stats.get("total_chunks", 0) == 0:
-            print("❌ No documents found in the database.")
-            print("💡 Use 'cliven ingest <pdf_path>' to add documents first.")
-            return
-
-        print(
-            f"📊 Found {stats['total_chunks']} chunks from {stats['total_documents']} documents:"
-        )
-        for doc_name, doc_info in stats.get("documents", {}).items():
-            print(f"   • {doc_name}: {doc_info['chunk_count']} chunks")
-
-        # Initialize chat engine
-        print("\n🔄 Initializing chat engine...")
-        chat_engine = ChatEngine(
-            model_name="tinyllama:chat",
-            chromadb_host="localhost",  # Changed from "chromadb" to "localhost"
-            ollama_host="localhost",  # Changed from "ollama" to "localhost"
-        )
-        print("✅ Chat engine ready!")
-
-        # Start interactive chat
-        print("\n" + "=" * 50)
-        print("💬 Chat with your documents! Ask any questions about the content.")
-        print("Commands: 'exit', 'quit', 'bye', or 'q' to stop")
-        print("=" * 50)
-
-        start_interactive_chat(chat_engine, "existing documents")
-
-    except Exception as e:
-        logger.error(f"Error starting chat with existing docs: {e}")
-        print(f"❌ Error: {e}")
-
-
-def handle_chat_with_pdf(pdf_path: str) -> None:
-    """Handle complete pipeline: ingest PDF and start chat"""
-    try:
-        from utils.parser import parse_pdf_with_chunking
-        from utils.embedder import create_embeddings_for_chunks
-        from utils.vectordb import store_embeddings_to_chromadb
-        from main.chat import ChatEngine
-
-        print("🚀 Starting Cliven REPL...")
-        print("=" * 50)
-
-        # Validate PDF path
-        pdf_file = Path(pdf_path)
-        if not pdf_file.exists():
-            print(f"❌ Error: PDF file not found: {pdf_path}")
-            return
-
-        if not pdf_file.suffix.lower() == ".pdf":
-            print(f"❌ Error: File must be a PDF: {pdf_path}")
-            return
-
-        print(f"📄 Processing PDF: {pdf_file.name}")
-
-        # Step 1: Parse and chunk PDF
-        print("🔄 Extracting text and creating chunks...")
-        chunks = parse_pdf_with_chunking(
-            pdf_path=str(pdf_file), chunk_size=1000, overlap=200
-        )
-        print(f"✅ Created {len(chunks)} text chunks")
-
-        # Step 2: Create embeddings
-        print("🔄 Creating embeddings...")
-        embedding_data = create_embeddings_for_chunks(chunks)
-        print(
-            f"✅ Generated embeddings (dimension: {embedding_data['embedding_dimension']})"
+        result = subprocess.run(
+            ["docker", "exec", "cliven_ollama", "ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
 
-        # Step 3: Store in ChromaDB
-        print("🔄 Storing in vector database...")
-        success = store_embeddings_to_chromadb(
-            embedding_data, host="localhost"
-        )  # Added host="localhost"
-        if not success:
-            print("❌ Failed to store embeddings in ChromaDB")
-            return
-        print("✅ Stored embeddings in ChromaDB")
-
-        # Step 4: Initialize chat engine
-        print("🔄 Initializing chat engine...")
-        chat_engine = ChatEngine(
-            model_name="tinyllama:chat",
-            chromadb_host="localhost",  # Changed from "chromadb"
-            ollama_host="localhost",  # Changed from "ollama"
-        )
-        print("✅ Chat engine ready!")
-
-        # Step 5: Start interactive chat
-        print("\n" + "=" * 50)
-        print("💬 Chat with your PDF! Ask any questions about the content.")
-        print("Commands: 'exit', 'quit', 'bye', or 'q' to stop")
-        print("=" * 50)
-
-        start_interactive_chat(chat_engine, pdf_file.name)
-
-    except Exception as e:
-        logger.error(f"Error in REPL startup: {e}")
-        print(f"❌ Error: {e}")
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")[1:]  # Skip header
+            models = []
+            for line in lines:
+                if line.strip():
+                    model_name = line.split()[0]  # First column is model name
+                    models.append(model_name)
+            return models
+        return []
+    except Exception:
+        return []
 
 
-def handle_list() -> None:
-    """Handle listing documents"""
-    try:
-        from utils.vectordb import ChromaDBManager
-        from rich.console import Console
-        from rich.table import Table
+def select_best_available_model() -> str:
+    """Select the best available model based on priority"""
+    available_models = get_available_models()
 
-        console = Console()
-        db_manager = ChromaDBManager(
-            host="localhost", port=8000
-        )  # Changed from "chromadb"
+    # Priority order: mistral:7b first, then gemma2:2b, then any available
+    priority_models = ["mistral:7b", "gemma2:2b"]
 
-        stats = db_manager.get_collection_stats()
+    for model in priority_models:
+        if model in available_models:
+            return model
 
-        if stats.get("total_chunks", 0) == 0:
-            console.print("📭 No documents found in the database.", style="yellow")
-            console.print(
-                "💡 Use 'cliven ingest <pdf_path>' to add documents.", style="blue"
-            )
-            return
+    # If none of the priority models are available, return first available or default
+    if available_models:
+        return available_models[0]
 
-        # Create table
-        table = Table(title="📚 Processed Documents")
-        table.add_column("Document", style="cyan", no_wrap=True)
-        table.add_column("Chunks", justify="right", style="magenta")
-        table.add_column("Total Size", justify="right", style="green")
-        table.add_column("File Size", justify="right", style="blue")
-
-        for doc_name, doc_info in stats.get("documents", {}).items():
-            chunk_count = doc_info.get("chunk_count", 0)
-            total_size = doc_info.get("total_size", 0)
-            file_size = doc_info.get("file_size", 0)
-
-            # Format sizes
-            total_size_str = f"{total_size:,} chars" if total_size > 0 else "N/A"
-            file_size_str = f"{file_size:,} bytes" if file_size > 0 else "N/A"
-
-            table.add_row(doc_name, str(chunk_count), total_size_str, file_size_str)
-
-        console.print(table)
-        console.print(
-            f"\n📊 Total: {stats['total_chunks']} chunks from {stats['total_documents']} documents"
-        )
-
-    except Exception as e:
-        print(f"❌ Error listing documents: {e}")
+    return "gemma2:2b"  # Default fallback
 
 
-def handle_status() -> None:
-    """Handle system status check"""
-    try:
-        from main.chat import ChatEngine
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.text import Text
-
-        console = Console()
-
-        console.print("🔍 Checking system status...", style="blue")
-
-        # Initialize chat engine for health check
-        chat_engine = ChatEngine()
-        health = chat_engine.health_check()
-
-        # Overall status
-        status_color = "green" if health["overall_status"] == "healthy" else "red"
-        status_text = Text(
-            f"System Status: {health['overall_status'].upper()}",
-            style=f"bold {status_color}",
-        )
-
-        console.print(Panel(status_text, title="🏥 Health Check"))
-
-        # Component details
-        for component, details in health.get("components", {}).items():
-            component_status = details.get("status", "unknown")
-            color = "green" if component_status == "healthy" else "red"
-
-            console.print(f"\n{component.upper()}:", style="bold")
-            console.print(f"  Status: {component_status}", style=color)
-
-            if "error" in details:
-                console.print(f"  Error: {details['error']}", style="red")
-
-            if component == "ollama" and "available_models" in details:
-                models = details["available_models"]
-                current_model = details.get("current_model", "N/A")
-                console.print(f"  Available models: {len(models)}")
-                console.print(f"  Current model: {current_model}")
-                if not details.get("model_available", True):
-                    console.print(
-                        f"  ⚠️  Warning: {current_model} not found", style="yellow"
-                    )
-
-    except Exception as e:
-        print(f"❌ Error checking status: {e}")
-
-
-def handle_clear(confirm: bool) -> None:
-    """Handle clearing all documents"""
-    try:
-        from utils.vectordb import ChromaDBManager
-
-        if not confirm:
-            response = input(
-                "⚠️  Are you sure you want to clear ALL documents? (yes/no): "
-            )
-            if response.lower() not in ["yes", "y"]:
-                print("Operation cancelled.")
-                return
-
-        db_manager = ChromaDBManager(
-            host="localhost", port=8000
-        )  # Changed from "chromadb"
-        success = db_manager.clear_collection()
-
-        if success:
-            print("✅ All documents cleared from the database.")
-        else:
-            print("❌ Failed to clear documents.")
-
-    except Exception as e:
-        print(f"❌ Error clearing documents: {e}")
-
-
-def handle_delete(doc_id: str) -> None:
-    """Handle deleting a specific document"""
-    try:
-        from utils.vectordb import ChromaDBManager
-
-        db_manager = ChromaDBManager(
-            host="localhost", port=8000
-        )  # Changed from "chromadb"
-        success = db_manager.delete_document(doc_id)
-
-        if success:
-            print(f"✅ Document '{doc_id}' deleted successfully.")
-        else:
-            print(f"❌ Document '{doc_id}' not found or failed to delete.")
-
-    except Exception as e:
-        print(f"❌ Error deleting document: {e}")
-
-
-def handle_docker() -> None:
+def handle_docker(use_better_model: bool = False) -> None:
     """Handle Docker operations for Cliven services"""
     import subprocess
     import time
@@ -475,9 +225,16 @@ def handle_docker() -> None:
 
     console = Console()
 
+    # Determine which model to pull
+    model_to_pull = "mistral:7b" if use_better_model else "gemma2:2b"
+    model_description = (
+        "better performance model" if use_better_model else "lightweight model"
+    )
+
     try:
         console.print(
-            "🐳 Checking Docker status and managing Cliven services...", style="blue"
+            f"🐳 Checking Docker status and managing Cliven services with {model_description}...",
+            style="blue",
         )
 
         # Check if Docker daemon is running
@@ -552,11 +309,17 @@ def handle_docker() -> None:
                 return
 
             # Step 2: Wait for Ollama service to be ready
-            task = progress.add_task("⏳ Waiting for Ollama to be ready this may take 20-30 mins depending upon connection...", total=None)
+            task = progress.add_task(
+                "⏳ Waiting for Ollama to be ready this may take several mins depending upon connection...",
+                total=None,
+            )
             time.sleep(10)  # Give Ollama time to start
 
-            # Step 3: Pull the tinyllama:chat model
-            task = progress.add_task("📥 Pulling tinyllama:chat model this may take 20-30 mins depending upon connection...", total=None)
+            # Step 3: Pull the specified model
+            task = progress.add_task(
+                f"📥 Pulling {model_to_pull} model this may take several mins depending upon connection...",
+                total=None,
+            )
             try:
                 result = subprocess.run(
                     [
@@ -566,19 +329,20 @@ def handle_docker() -> None:
                         "cliven_ollama",
                         "ollama",
                         "pull",
-                        "tinyllama:chat",
+                        model_to_pull,
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=300,  # 5 minutes timeout for model download
+                    timeout=800,
                 )
                 if result.returncode == 0:
                     progress.update(
-                        task, description="✅ tinyllama:chat model pulled successfully"
+                        task,
+                        description=f"✅ {model_to_pull} model pulled successfully",
                     )
                 else:
                     progress.update(
-                        task, description="❌ Failed to pull tinyllama:chat model"
+                        task, description=f"❌ Failed to pull {model_to_pull} model"
                     )
                     console.print(f"Pull error: {result.stderr}", style="red")
                     # Don't return here, continue to show status
@@ -613,7 +377,7 @@ def handle_docker() -> None:
         except:
             console.print("🔴 ChromaDB: Not accessible", style="red")
 
-        # Check Ollama
+        # Check Ollama and list available models
         try:
             result = subprocess.run(
                 ["curl", "-s", "http://localhost:11434/api/tags"],
@@ -633,13 +397,27 @@ def handle_docker() -> None:
                         console.print(
                             f"   Available models: {', '.join(models)}", style="cyan"
                         )
-                        if "tinyllama:chat" in models:
+
+                        # Check for specific models
+                        if "gemma2:2b" in models:
                             console.print(
-                                "   ✅ tinyllama:chat model is ready", style="green"
+                                "   ✅ gemma2:2b model is ready", style="green"
+                            )
+                        if "mistral:7b" in models:
+                            console.print(
+                                "   ✅ mistral:7b model is ready", style="green"
+                            )
+
+                        # Show which model was just pulled
+                        if model_to_pull in models:
+                            console.print(
+                                f"   🎯 {model_to_pull} is now available for chat",
+                                style="bold green",
                             )
                         else:
                             console.print(
-                                "   ⚠️  tinyllama:chat model not found", style="yellow"
+                                f"   ⚠️  {model_to_pull} model not found after pull",
+                                style="yellow",
                             )
                     else:
                         console.print("   ⚠️  No models found", style="yellow")
@@ -688,9 +466,23 @@ def handle_docker() -> None:
         console.print("3. Run: cliven ingest <pdf_path> - to process a PDF")
         console.print("4. Run: cliven chat - to start chatting")
 
-        if "tinyllama:chat" not in str(result.stdout if "result" in locals() else ""):
-            console.print("\n💡 If model pull failed, manually run:")
-            console.print("   docker exec -it cliven_ollama ollama pull tinyllama:chat")
+        if use_better_model:
+            console.print(
+                "5. Chat will automatically use mistral:7b for better responses"
+            )
+        else:
+            console.print("5. Chat will use gemma2:2b for faster responses")
+            console.print(
+                "   💡 Use 'cliven docker start --BP' for better model (mistral:7b)"
+            )
+
+        # Show manual command if model pull failed
+        available_models = get_available_models()
+        if model_to_pull not in available_models:
+            console.print(f"\n💡 If model pull failed, manually run:")
+            console.print(
+                f"   docker exec -it cliven_ollama ollama pull {model_to_pull}"
+            )
 
     except KeyboardInterrupt:
         console.print("\n⚠️  Operation cancelled by user", style="yellow")
@@ -702,53 +494,638 @@ def handle_docker() -> None:
         )
 
 
-def handle_docker_stop() -> None:
-    """Stop Docker services"""
-    import subprocess
-    from rich.console import Console
-
-    console = Console()
-
+def handle_chat_existing(model_override: Optional[str] = None) -> None:
+    """Handle chat with existing documents"""
     try:
-        console.print("🛑 Stopping Cliven Docker services...", style="blue")
+        from utils.vectordb import ChromaDBManager
+        from main.chat import ChatEngine
+
+        print("🚀 Starting chat with existing documents...")
+        print("=" * 50)
+
+        # Initialize ChromaDB manager to check existing documents
+        # Use localhost instead of chromadb for local development
+        db_manager = ChromaDBManager(host="localhost", port=8000)
+
+        # Check if there are existing documents
+        stats = db_manager.get_collection_stats()
+
+        if stats.get("total_chunks", 0) == 0:
+            print("❌ No documents found in the database.")
+            print("💡 Use 'cliven ingest <pdf_path>' to add documents first.")
+            return
+
+        print(
+            f"📊 Found {stats['total_chunks']} chunks from {stats['total_documents']} documents:"
+        )
+        for doc_name, doc_info in stats.get("documents", {}).items():
+            print(f"   • {doc_name}: {doc_info['chunk_count']} chunks")
+
+        # Use model override if provided, otherwise auto-select
+        if model_override:
+            selected_model = model_override
+            print(f"\n🤖 Using specified model: {selected_model}")
+        else:
+            selected_model = select_best_available_model()
+            print(f"\n🤖 Auto-selected model: {selected_model}")
+
+        if selected_model == "mistral:7b":
+            print("   🚀 Using high-performance model for better responses")
+        elif selected_model == "gemma2:2b":
+            print("   ⚡ Using lightweight model for faster responses")
+        else:
+            print(f"   📝 Using available model: {selected_model}")
+
+        # Initialize chat engine
+        print("\n🔄 Initializing chat engine...")
+        chat_engine = ChatEngine(
+            model_name=selected_model,
+            chromadb_host="localhost",  # Changed from "chromadb" to "localhost"
+            ollama_host="localhost",  # Changed from "ollama" to "localhost"
+        )
+        print("✅ Chat engine ready!")
+
+        # Start interactive chat
+        print("\n" + "=" * 50)
+        print("💬 Chat with your documents! Ask any questions about the content.")
+        print("Commands: 'exit', 'quit', 'bye', or 'q' to stop")
+        print("=" * 50)
+
+        start_interactive_chat(chat_engine, "existing documents")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def handle_chat_with_pdf(pdf_path: str, model_override: Optional[str] = None) -> None:
+    """Handle complete pipeline: ingest PDF and start chat"""
+    try:
+        from utils.parser import parse_pdf_with_chunking
+        from utils.embedder import create_embeddings_for_chunks
+        from utils.vectordb import store_embeddings_to_chromadb
+        from main.chat import ChatEngine
+
+        print("🚀 Starting Cliven REPL...")
+        print("=" * 50)
+
+        # Validate PDF path
+        pdf_file = Path(pdf_path)
+        if not pdf_file.exists():
+            print(f"❌ Error: PDF file not found: {pdf_path}")
+            return
+
+        if not pdf_file.suffix.lower() == ".pdf":
+            print(f"❌ Error: File must be a PDF: {pdf_path}")
+            return
+
+        print(f"📄 Processing PDF: {pdf_file.name}")
+
+        # Step 1: Parse and chunk PDF
+        print("🔄 Extracting text and creating chunks...")
+        chunks = parse_pdf_with_chunking(
+            pdf_path=str(pdf_file), chunk_size=1000, overlap=200
+        )
+        print(f"✅ Created {len(chunks)} text chunks")
+
+        # Step 2: Create embeddings
+        print("🔄 Creating embeddings...")
+        embedding_data = create_embeddings_for_chunks(chunks)
+        print(
+            f"✅ Generated embeddings (dimension: {embedding_data['embedding_dimension']})"
+        )
+
+        # Step 3: Store in ChromaDB
+        print("🔄 Storing in vector database...")
+        success = store_embeddings_to_chromadb(
+            embedding_data, host="localhost"
+        )  # Added host="localhost"
+        if not success:
+            print("❌ Failed to store embeddings in ChromaDB")
+            return
+        print("✅ Stored embeddings in ChromaDB")
+
+        # Step 4: Use model override if provided, otherwise auto-select
+        if model_override:
+            selected_model = model_override
+            print(f"\n🤖 Using specified model: {selected_model}")
+        else:
+            selected_model = select_best_available_model()
+            print(f"\n🤖 Auto-selected model: {selected_model}")
+
+        if selected_model == "mistral:7b":
+            print("   🚀 Using high-performance model for better responses")
+        elif selected_model == "gemma2:2b":
+            print("   ⚡ Using lightweight model for faster responses")
+        else:
+            print(f"   📝 Using available model: {selected_model}")
+
+        # Step 5: Initialize chat engine
+        print("🔄 Initializing chat engine...")
+        chat_engine = ChatEngine(
+            model_name=selected_model,
+            chromadb_host="localhost",  # Changed from "chromadb"
+            ollama_host="localhost",  # Changed from "ollama"
+        )
+        print("✅ Chat engine ready!")
+
+        # Step 6: Start interactive chat
+        print("\n" + "=" * 50)
+        print("💬 Chat with your PDF! Ask any questions about the content.")
+        print("Commands: 'exit', 'quit', 'bye', or 'q' to stop")
+        print("=" * 50)
+
+        start_interactive_chat(chat_engine, pdf_file.name)
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def handle_list() -> None:
+    """Handle listing all processed documents"""
+    try:
+        from utils.vectordb import ChromaDBManager
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        console.print("📋 Listing processed documents...", style="blue")
+
+        # Initialize ChromaDB manager
+        db_manager = ChromaDBManager(host="localhost", port=8000)
+
+        # Get collection stats
+        stats = db_manager.get_collection_stats()
+
+        if stats.get("total_chunks", 0) == 0:
+            console.print("📄 No documents found in the database.", style="yellow")
+            console.print("💡 Use 'cliven ingest <pdf_path>' to add documents first.")
+            return
+
+        # Create a table for better display
+        table = Table(title="📚 Processed Documents")
+        table.add_column("Document Name", style="cyan")
+        table.add_column("Chunks", justify="right", style="green")
+        table.add_column("Status", style="bold")
+
+        # Add documents to table
+        for doc_name, doc_info in stats.get("documents", {}).items():
+            chunk_count = doc_info.get("chunk_count", 0)
+            status = "✅ Ready" if chunk_count > 0 else "⚠️ Empty"
+            table.add_row(doc_name, str(chunk_count), status)
+
+        console.print(table)
+
+        # Summary
+        console.print(f"\n📊 Summary:", style="bold")
+        console.print(f"   • Total documents: {stats.get('total_documents', 0)}")
+        console.print(f"   • Total chunks: {stats.get('total_chunks', 0)}")
+        console.print(f"   • Database status: ✅ Connected")
+
+    except Exception as e:
+        console.print(f"❌ Error listing documents: {e}", style="red")
+
+
+def handle_delete(doc_id: str) -> None:
+    """Handle deleting a specific document"""
+    try:
+        from utils.vectordb import ChromaDBManager
+        from rich.console import Console
+        from rich.prompt import Confirm
+
+        console = Console()
+
+        console.print(f"🗑️  Preparing to delete document: {doc_id}", style="yellow")
+
+        # Initialize ChromaDB manager
+        db_manager = ChromaDBManager(host="localhost", port=8000)
+
+        # Check if document exists
+        stats = db_manager.get_collection_stats()
+        documents = stats.get("documents", {})
+
+        if doc_id not in documents:
+            console.print(f"❌ Document '{doc_id}' not found.", style="red")
+            console.print("Available documents:")
+            for doc_name in documents.keys():
+                console.print(f"   • {doc_name}")
+            return
+
+        # Get document info
+        doc_info = documents[doc_id]
+        chunk_count = doc_info.get("chunk_count", 0)
+
+        console.print(f"📄 Document: {doc_id}")
+        console.print(f"📊 Chunks to delete: {chunk_count}")
+
+        # Confirm deletion
+        if not Confirm.ask(f"Are you sure you want to delete '{doc_id}'?"):
+            console.print("❌ Deletion cancelled.", style="yellow")
+            return
+
+        # Delete document
+        success = db_manager.delete_document(doc_id)
+
+        if success:
+            console.print(
+                f"✅ Successfully deleted '{doc_id}' and its {chunk_count} chunks.",
+                style="green",
+            )
+        else:
+            console.print(f"❌ Failed to delete '{doc_id}'.", style="red")
+
+    except Exception as e:
+        console.print(f"❌ Error deleting document: {e}", style="red")
+
+
+def handle_clear(skip_confirmation: bool = False) -> None:
+    """Handle clearing all documents"""
+    try:
+        from utils.vectordb import ChromaDBManager
+        from rich.console import Console
+        from rich.prompt import Confirm
+
+        console = Console()
+
+        console.print("🗑️  Preparing to clear all documents...", style="yellow")
+
+        # Initialize ChromaDB manager
+        db_manager = ChromaDBManager(host="localhost", port=8000)
+
+        # Get current stats
+        stats = db_manager.get_collection_stats()
+        total_docs = stats.get("total_documents", 0)
+        total_chunks = stats.get("total_chunks", 0)
+
+        if total_docs == 0:
+            console.print(
+                "📄 No documents to clear. Database is already empty.", style="blue"
+            )
+            return
+
+        console.print(f"📊 Current database contents:")
+        console.print(f"   • Documents: {total_docs}")
+        console.print(f"   • Chunks: {total_chunks}")
+
+        # Confirm deletion unless skipped
+        if not skip_confirmation:
+            console.print(
+                "\n⚠️  This will permanently delete ALL processed documents!",
+                style="red",
+            )
+            if not Confirm.ask("Are you sure you want to clear the entire database?"):
+                console.print("❌ Clear operation cancelled.", style="yellow")
+                return
+
+        # Clear database
+        console.print("🔄 Clearing database...")
+        success = db_manager.clear_collection()
+
+        if success:
+            console.print(
+                f"✅ Successfully cleared {total_docs} documents and {total_chunks} chunks.",
+                style="green",
+            )
+            console.print("💡 Use 'cliven ingest <pdf_path>' to add new documents.")
+        else:
+            console.print("❌ Failed to clear database.", style="red")
+
+    except Exception as e:
+        console.print(f"❌ Error clearing database: {e}", style="red")
+
+
+def handle_status() -> None:
+    """Handle showing system status"""
+    try:
+        import subprocess
+        import requests
+        from rich.console import Console
+        from rich.table import Table
+        from rich.panel import Panel
+
+        console = Console()
+
+        console.print("🔍 Checking Cliven system status...", style="blue")
+
+        # Create status table
+        table = Table(title="🖥️  Cliven System Status")
+        table.add_column("Component", style="bold")
+        table.add_column("Status", justify="center")
+        table.add_column("Details", style="dim")
+
+        # Check Docker daemon
+        try:
+            result = subprocess.run(
+                ["docker", "info"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                table.add_row("Docker Daemon", "🟢 Running", "Docker is available")
+            else:
+                table.add_row("Docker Daemon", "🔴 Stopped", "Docker not running")
+        except:
+            table.add_row(
+                "Docker Daemon", "🔴 Error", "Docker not installed/accessible"
+            )
+
+        # Check Docker containers
+        try:
+            result = subprocess.run(
+                ["docker-compose", "ps"], capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split("\n")[1:]  # Skip header
+                chromadb_running = False
+                ollama_running = False
+
+                for line in lines:
+                    if line.strip():
+                        if "cliven_chromadb" in line and "Up" in line:
+                            chromadb_running = True
+                        if "cliven_ollama" in line and "Up" in line:
+                            ollama_running = True
+
+                if chromadb_running:
+                    table.add_row(
+                        "ChromaDB Container", "🟢 Running", "Vector database active"
+                    )
+                else:
+                    table.add_row(
+                        "ChromaDB Container", "🔴 Stopped", "Container not running"
+                    )
+
+                if ollama_running:
+                    table.add_row(
+                        "Ollama Container", "🟢 Running", "AI model server active"
+                    )
+                else:
+                    table.add_row(
+                        "Ollama Container", "🔴 Stopped", "Container not running"
+                    )
+            else:
+                table.add_row(
+                    "Containers", "🔴 Error", "Could not check container status"
+                )
+        except:
+            table.add_row("Containers", "🔴 Error", "Docker Compose not available")
+
+        # Check ChromaDB API
+        try:
+            response = requests.get("http://localhost:8000/api/v1/heartbeat", timeout=5)
+            if response.status_code == 200:
+                table.add_row(
+                    "ChromaDB API", "🟢 Healthy", "Port 8000 - API responding"
+                )
+            else:
+                table.add_row(
+                    "ChromaDB API", "🔴 Unhealthy", f"HTTP {response.status_code}"
+                )
+        except:
+            table.add_row("ChromaDB API", "🔴 Down", "Port 8000 - Not accessible")
+
+        # Check Ollama API and models
+        try:
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if response.status_code == 200:
+                table.add_row("Ollama API", "🟢 Healthy", "Port 11434 - API responding")
+
+                # Check available models
+                models_data = response.json()
+                models = [model["name"] for model in models_data.get("models", [])]
+                if models:
+                    model_list = ", ".join(models[:3])  # Show first 3 models
+                    if len(models) > 3:
+                        model_list += f" (+{len(models)-3} more)"
+                    table.add_row("AI Models", "🟢 Available", model_list)
+                else:
+                    table.add_row("AI Models", "🔴 None", "No models downloaded")
+            else:
+                table.add_row(
+                    "Ollama API", "🔴 Unhealthy", f"HTTP {response.status_code}"
+                )
+        except:
+            table.add_row("Ollama API", "🔴 Down", "Port 11434 - Not accessible")
+
+        # Check database contents
+        try:
+            from utils.vectordb import ChromaDBManager
+
+            db_manager = ChromaDBManager(host="localhost", port=8000)
+            stats = db_manager.get_collection_stats()
+
+            total_docs = stats.get("total_documents", 0)
+            total_chunks = stats.get("total_chunks", 0)
+
+            if total_docs > 0:
+                table.add_row(
+                    "Document Database",
+                    "🟢 Ready",
+                    f"{total_docs} docs, {total_chunks} chunks",
+                )
+            else:
+                table.add_row("Document Database", "🔴 Empty", "No documents processed")
+        except:
+            table.add_row("Document Database", "🔴 Error", "Cannot access database")
+
+        console.print(table)
+
+        # System recommendations
+        console.print("\n💡 System Recommendations:", style="bold yellow")
+
+        # Check if services need to be started
+        try:
+            docker_running = (
+                subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+            )
+            if not docker_running:
+                console.print("   • Start Docker Desktop or Docker daemon")
+            else:
+                containers_result = subprocess.run(
+                    ["docker-compose", "ps"], capture_output=True, text=True
+                )
+                if "Up" not in containers_result.stdout:
+                    console.print("   • Run: cliven docker start")
+        except:
+            console.print("   • Install Docker and Docker Compose")
+
+        # Check if models need to be downloaded
+        try:
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                if not models:
+                    console.print(
+                        "   • Run: cliven docker start (to download AI models)"
+                    )
+        except:
+            pass
+
+        # Check if documents need to be added
+        try:
+            from utils.vectordb import ChromaDBManager
+
+            db_manager = ChromaDBManager(host="localhost", port=8000)
+            stats = db_manager.get_collection_stats()
+            if stats.get("total_documents", 0) == 0:
+                console.print("   • Run: cliven ingest <pdf_path> (to add documents)")
+        except:
+            pass
+
+    except Exception as e:
+        console.print(f"❌ Error checking system status: {e}", style="red")
+
+
+def handle_docker_stop() -> None:
+    """Handle stopping Docker services"""
+    try:
+        import subprocess
+        import os
+        from rich.console import Console
+        from rich.progress import Progress, SpinnerColumn, TextColumn
+
+        console = Console()
+
+        console.print("🛑 Stopping Cliven Docker services...", style="yellow")
 
         # Change to project directory
         project_root = Path(__file__).parent.parent
         os.chdir(project_root)
 
-        result = subprocess.run(
-            ["docker-compose", "down"], capture_output=True, text=True, timeout=60
-        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
 
-        if result.returncode == 0:
-            console.print("✅ Docker services stopped successfully", style="green")
-        else:
-            console.print("❌ Failed to stop Docker services", style="red")
-            console.print(f"Error: {result.stderr}", style="red")
+            task = progress.add_task("🔄 Stopping containers...", total=None)
+
+            try:
+                result = subprocess.run(
+                    ["docker-compose", "down"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                if result.returncode == 0:
+                    progress.update(
+                        task, description="✅ Services stopped successfully"
+                    )
+                    console.print(
+                        "\n🟢 All Cliven services have been stopped.", style="green"
+                    )
+                    console.print(
+                        "💡 Use 'cliven docker start' to restart services when needed."
+                    )
+                else:
+                    progress.update(task, description="❌ Failed to stop services")
+                    console.print(
+                        f"\n❌ Error stopping services: {result.stderr}", style="red"
+                    )
+
+            except subprocess.TimeoutExpired:
+                progress.update(task, description="⏰ Stop operation timed out")
+                console.print(
+                    "\n⚠️  Stop operation timed out, but services may still be stopping.",
+                    style="yellow",
+                )
+            except Exception as e:
+                progress.update(task, description=f"❌ Error: {str(e)}")
+                console.print(f"\n❌ Error: {e}", style="red")
+
+        # Show final container status
+        console.print("\n📦 Final container status:")
+        try:
+            result = subprocess.run(
+                ["docker-compose", "ps"], capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split("\n")[1:]  # Skip header
+                if not lines or not any(line.strip() for line in lines):
+                    console.print("   📴 No containers running", style="green")
+                else:
+                    for line in lines:
+                        if line.strip():
+                            console.print(f"   {line}")
+            else:
+                console.print("   ❌ Could not check container status", style="red")
+        except:
+            console.print("   ❌ Error checking container status", style="red")
 
     except Exception as e:
         console.print(f"❌ Error stopping Docker services: {e}", style="red")
 
 
 def handle_docker_logs() -> None:
-    """Show Docker service logs"""
-    import subprocess
-    from rich.console import Console
-
-    console = Console()
-
+    """Handle showing Docker service logs"""
     try:
-        console.print("📋 Showing Docker service logs...", style="blue")
+        import subprocess
+        import os
+        from rich.console import Console
+        from rich.prompt import Prompt
+        from rich.panel import Panel
+
+        console = Console()
 
         # Change to project directory
         project_root = Path(__file__).parent.parent
         os.chdir(project_root)
 
-        # Show logs for all services
-        result = subprocess.run(["docker-compose", "logs", "--tail=50"], timeout=30)
+        console.print("📋 Cliven Docker Service Logs", style="bold blue")
+
+        # Ask which service to show logs for
+        console.print("\nAvailable services:")
+        console.print("   1. chromadb  - Vector database logs")
+        console.print("   2. ollama    - AI model server logs")
+        console.print("   3. all       - All service logs")
+
+        choice = Prompt.ask(
+            "\nWhich service logs would you like to see?",
+            choices=["1", "2", "3", "chromadb", "ollama", "all"],
+            default="all",
+        )
+
+        # Map choices to service names
+        service_map = {
+            "1": "chromadb",
+            "2": "ollama",
+            "3": "all",
+            "chromadb": "chromadb",
+            "ollama": "ollama",
+            "all": "all",
+        }
+
+        selected_service = service_map.get(choice, "all")
+
+        console.print(f"\n📋 Showing logs for: {selected_service}")
+        console.print("Press Ctrl+C to exit log viewer\n")
+
+        try:
+            if selected_service == "all":
+                # Show all service logs
+                result = subprocess.run(
+                    ["docker-compose", "logs", "--tail=100", "-f"],
+                    timeout=None,  # No timeout for log following
+                )
+            else:
+                # Show specific service logs
+                service_name = f"cliven_{selected_service}"
+                result = subprocess.run(
+                    ["docker-compose", "logs", "--tail=100", "-f", selected_service],
+                    timeout=None,  # No timeout for log following
+                )
+
+        except KeyboardInterrupt:
+            console.print("\n\n👋 Log viewer stopped.", style="yellow")
+        except subprocess.CalledProcessError as e:
+            console.print(f"\n❌ Error accessing logs: {e}", style="red")
+            console.print(
+                "💡 Make sure Docker services are running: cliven docker start"
+            )
+        except Exception as e:
+            console.print(f"\n❌ Unexpected error: {e}", style="red")
 
     except Exception as e:
-        console.print(f"❌ Error showing logs: {e}", style="red")
+        console.print(f"❌ Error showing Docker logs: {e}", style="red")
 
 
 def main():
@@ -775,7 +1152,7 @@ def main():
     # Chat command
     chat_parser = subparsers.add_parser("chat", help="Start interactive chat")
     chat_parser.add_argument(
-        "--model", default="tinyllama:chat", help="LLM model to use"
+        "--model", default=None, help="LLM model to use (overrides auto-selection)"
     )
     chat_parser.add_argument(
         "--max-results", type=int, default=5, help="Max context chunks"
@@ -808,6 +1185,12 @@ def main():
     docker_start_parser = docker_subparsers.add_parser(
         "start", help="Start Docker services"
     )
+    docker_start_parser.add_argument(
+        "--BP",
+        "--better-performance",
+        action="store_true",
+        help="Use mistral:7b model for better performance instead of gemma2:2b",
+    )
 
     # Docker stop
     docker_stop_parser = docker_subparsers.add_parser(
@@ -833,9 +1216,9 @@ def main():
 
         elif args.command == "chat":
             if args.repl:
-                handle_chat_with_pdf(args.repl)
+                handle_chat_with_pdf(args.repl, model_override=args.model)
             else:
-                handle_chat_existing()
+                handle_chat_existing(model_override=args.model)
 
         elif args.command == "list":
             handle_list()
@@ -851,7 +1234,8 @@ def main():
 
         elif args.command == "docker":
             if args.docker_command == "start" or args.docker_command is None:
-                handle_docker()
+                use_better_model = getattr(args, "BP", False)
+                handle_docker(use_better_model)
             elif args.docker_command == "stop":
                 handle_docker_stop()
             elif args.docker_command == "logs":

@@ -4,11 +4,11 @@ import pdfplumber
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from typing import List, Dict, Any
 from pathlib import Path
-import logging
+import warnings
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Suppress pdfminer warnings and show each warning only once
+warnings.filterwarnings("ignore", category=UserWarning, module="pdfminer")
+warnings.filterwarnings("once")  # Show each unique warning only once
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -28,30 +28,24 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         text_content = ""
 
         with pdfplumber.open(pdf_path) as pdf:
-            logger.info(f"Processing PDF with {len(pdf.pages)} pages")
-
             for page_num, page in enumerate(pdf.pages, 1):
                 try:
                     page_text = page.extract_text()
                     if page_text:
                         text_content += f"\n\n--- Page {page_num} ---\n\n"
                         text_content += page_text
-                        logger.debug(f"Extracted text from page {page_num}")
                     else:
-                        logger.warning(f"No text found on page {page_num}")
+                        continue
 
                 except Exception as e:
-                    logger.warning(f"Error extracting text from page {page_num}: {e}")
                     continue
 
         if not text_content.strip():
             raise Exception("No text content extracted from PDF")
 
-        logger.info(f"Successfully extracted {len(text_content)} characters from PDF")
         return text_content.strip()
 
     except Exception as e:
-        logger.error(f"Error reading PDF {pdf_path}: {e}")
         raise Exception(f"Failed to extract text from PDF: {e}")
 
 
@@ -96,11 +90,9 @@ def chunk_text(
             }
             chunked_documents.append(chunk_data)
 
-        logger.info(f"Successfully created {len(chunked_documents)} chunks")
         return chunked_documents
 
     except Exception as e:
-        logger.error(f"Error chunking text: {e}")
         raise Exception(f"Failed to chunk text: {e}")
 
 
@@ -127,8 +119,6 @@ def parse_pdf_with_chunking(
         if not pdf_file.suffix.lower() == ".pdf":
             raise Exception(f"File must be a PDF: {pdf_path}")
 
-        logger.info(f"Starting PDF processing: {pdf_file.name}")
-
         # Step 1: Extract text from PDF
         extracted_text = extract_text_from_pdf(pdf_path)
 
@@ -145,11 +135,9 @@ def parse_pdf_with_chunking(
                 }
             )
 
-        logger.info(f"PDF processing complete: {len(chunks)} chunks created")
         return chunks
 
     except Exception as e:
-        logger.error(f"Error in PDF processing pipeline: {e}")
         raise Exception(f"PDF processing failed: {e}")
 
 

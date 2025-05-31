@@ -5,11 +5,11 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="cliven",
-    version="0.1.0",
+    version="0.2.0",
     author="Kreyon aka vikas",
     author_email="vikaskumar783588@gmail.com",
     description="Chat with your PDFs using local AI models",
-    long_description="Chat with your PDFs using local AI models",
+    long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/krey-yon/cliven",
     packages=find_packages(),

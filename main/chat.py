@@ -32,8 +32,8 @@ def select_best_available_ollama_model() -> str:
     """Select the best available model based on priority"""
     available_models = get_available_ollama_models()
 
-    # Priority order: mistral:7b first (better performance), then gemma2:2b
-    priority_models = ["mistral:7b", "gemma2:2b"]
+    # Priority order: gemma3:4b first (better performance), then gemma2:2b
+    priority_models = ["gemma3:4b", "gemma2:2b"]
 
     for model in priority_models:
         if model in available_models:
@@ -116,7 +116,7 @@ class ChatEngine:
             "current_model": self.model_name,
             "available_models": available_models,
             "model_available": self.model_name in available_models,
-            "model_priority": "high" if self.model_name == "mistral:7b" else "standard",
+            "model_priority": "high" if self.model_name == "gemma3:4b" else "standard",
         }
 
     def _get_relevant_context(self, question: str) -> str:
@@ -179,8 +179,8 @@ class ChatEngine:
             prompt = self._create_prompt(context, question)
 
             # Adjust parameters based on model
-            if self.model_name == "mistral:7b":
-                # Higher performance settings for mistral
+            if self.model_name == "gemma3:4b":
+                # Higher performance settings for mgemma3:4b
                 options = {
                     "temperature": 0.7,
                     "top_p": 0.9,
@@ -240,7 +240,7 @@ class ChatEngine:
         )
 
         # Enhanced prompt for better models
-        if self.model_name == "mistral:7b":
+        if self.model_name == "gemma3:4b":
             prompt = f"""You are a helpful AI assistant analyzing PDF documents. Based on the provided context, answer the user's question accurately and comprehensively.
 
 Context from documents:

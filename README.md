@@ -12,7 +12,7 @@ Cliven is a command-line tool that allows you to process PDF documents and have 
 - 🐳 **Docker Ready**: Easy setup with Docker Compose
 - 💾 **Local Storage**: All data stays on your machine
 - 🎯 **Simple CLI**: Easy-to-use command-line interface
-- 🚀 **Model Selection**: Support for both lightweight (TinyLlama) and high-performance (Mistral) models
+- 🚀 **Model Selection**: Support for both lightweight (Gemma2) and high-performance (Gemma3) models
 - 📊 **Rich UI**: Beautiful terminal interface with progress indicators
 
 ## Quick Start 🚀
@@ -36,7 +36,7 @@ pip install -e .
 # Start with lightweight model (tinyllama:chat)
 cliven docker start
 
-# OR start with high-performance model (mistral:7b)
+# OR start with high-performance model (gemma3:4b)
 cliven docker start --BP
 # or
 cliven docker start --better-performance
@@ -110,10 +110,10 @@ cliven ingest ./documents/user-manual.pdf --chunk-size 1500 --overlap 300
 cliven chat
 
 # Chat with specific model
-cliven chat --model mistral:7b
+cliven chat --model gemma3:4b
 
 # Process and chat with a specific PDF using high-performance model
-cliven chat --repl ./research-paper.pdf --model mistral:7b
+cliven chat --repl ./research-paper.pdf --model gemma3:4b
 
 # Check what documents are stored
 cliven list
@@ -182,7 +182,7 @@ Cliven uses a modern RAG (Retrieval-Augmented Generation) architecture:
 - Python 3.8+
 - Docker & Docker Compose
 - 2GB+ RAM (for TinyLlama model)
-- 8GB+ RAM (for Mistral 7B model)
+- 8GB+ RAM (for Gemma3 4B model)
 - 4GB+ disk space
 
 ### Python Dependencies
@@ -242,7 +242,7 @@ OLLAMA_PORT=11434
 cliven ingest document.pdf --chunk-size 1500 --overlap 300
 
 # Use different model
-cliven chat --model mistral:7b
+cliven chat --model gemma3:4b
 
 # Adjust context window
 cliven chat --max-results 10
@@ -258,8 +258,8 @@ cliven clear --confirm
 cliven status
 
 # Manually pull models
-docker exec -it cliven_ollama ollama pull mistral:7b
-docker exec -it cliven_ollama ollama pull tinyllama:chat
+docker exec -it cliven_ollama ollama pull gemma3:4b
+docker exec -it cliven_ollama ollama pull gemma2:2b
 
 # List downloaded models
 docker exec -it cliven_ollama ollama list
@@ -290,7 +290,7 @@ docker exec -it cliven_ollama ollama list
    cliven status
 
    # Manually pull model
-   docker exec -it cliven_ollama ollama pull mistral:7b
+   docker exec -it cliven_ollama ollama pull gemma3:4b
    docker exec -it cliven_ollama ollama pull tinyllama:chat
    ```
 

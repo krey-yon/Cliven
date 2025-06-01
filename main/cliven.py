@@ -12,30 +12,58 @@ sys.path.insert(0, str(project_root))
 def show_welcome():
     """Display welcome message and available commands"""
     print(
-        """
-🤖 Cliven - Chat with PDF CLI Tool
-==================================
-
-Available Commands:
-  cliven ingest <pdf_path>           - Process and store PDF in vector database
-  cliven chat                        - Start interactive chat session with existing docs
-  cliven chat --repl <pdf_path>      - Process PDF and start interactive chat
-  cliven list                        - List all processed documents
-  cliven delete <doc_id>             - Delete a processed document
-  cliven clear                       - Clear all processed documents
-  cliven status                      - Show system status (ChromaDB, Ollama)
-  cliven --help                      - Show detailed help
-  cliven --version                   - Show version information
-
-Examples:
-  cliven ingest ./documents/manual.pdf
-  cliven chat
-  cliven chat --repl ./documents/manual.pdf
-  cliven list
-  
-📘 Cliven is ready! Use any command above to get started.
-    """
+        r"""
+┌───────────────────────────────────────────────────────────────────────────────┐
+│ 🤖  ██████╗██╗     ██╗██╗   ██╗███████╗███╗   ██╗                             │
+│     ██╔════╝██║     ██║██║   ██║██╔════╝████╗  ██║                            │
+│     ██║     ██║     ██║██║   ██║█████╗  ██╔██╗ ██║  Cliven - Chat with PDFs   │
+│     ██║     ██║     ██║██║   ██║██╔══╝  ██║╚██╗██║  CLI Tool                  │
+│     ╚██████╗███████╗██║╚██████╔╝███████╗██║ ╚████║                            │
+│      ╚═════╝╚══════╝╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝                            │
+├───────────────────────────────────────────────────────────────────────────────┤
+│ 🛠️  Available Commands:                                                       │
+│                                                                               │
+│  cliven ingest <pdf_path>           → Process and store PDF in vector DB      │
+│     └─ --chunk-size SIZE            → Set chunk size (default: 1000)          │
+│     └─ --overlap SIZE               → Set chunk overlap (default: 200)        │
+│                                                                               │
+│  cliven chat                         → Start interactive chat with documents  │
+│     └─ --model MODEL_NAME           → Use specific LLM model                  │
+│     └─ --max-results COUNT          → Context chunk limit (default: 5)        │
+│     └─ --repl <pdf_path>            → Ingest & chat immediately               │
+│                                                                               │
+│  cliven list                         → List all processed documents           │
+│  cliven delete <doc_id>              → Delete a processed document            │
+│  cliven clear                        → Clear all documents                    │
+│     └─ --confirm                    → Skip confirmation prompt                │
+│                                                                               │
+│  cliven status                       → Show system status (ChromaDB, Ollama)  │
+│                                                                               │
+│  cliven docker start                 → Start Docker services                  │
+│     └─ --BP / --better-performance → Use gemma3:4b for higher performance     │
+│  cliven docker stop                  → Stop Docker services                   │
+│  cliven docker logs                  → Show Docker logs                       │
+│                                                                               │
+│  cliven --help                       → Show detailed help                     │
+│  cliven --version                    → Show version information               │
+├───────────────────────────────────────────────────────────────────────────────┤
+│ 📌 Examples:                                                                  │
+│                                                                               │
+│  cliven ingest ./docs/manual.pdf --chunk-size 1500 --overlap 300              │
+│  cliven chat --model gemma3:4b                                                │
+│  cliven chat --repl ./docs/manual.pdf --model gemma3:4b                       │
+│  cliven list                                                                  │
+│  cliven delete manual.pdf                                                     │
+│  cliven clear --confirm                                                       │
+│  cliven status                                                                │
+│  cliven docker start --BP                                                     │
+│  cliven docker logs                                                           │
+├───────────────────────────────────────────────────────────────────────────────┤
+│ ✅ Cliven is ready! Use any command above to get started.                     │
+└───────────────────────────────────────────────────────────────────────────────┘
+"""
     )
+
 
 
 def start_interactive_chat(chat_engine, pdf_name: str = "existing documents") -> None:
@@ -199,8 +227,8 @@ def select_best_available_model() -> str:
     """Select the best available model based on priority"""
     available_models = get_available_models()
 
-    # Priority order: mistral:7b first, then gemma2:2b, then any available
-    priority_models = ["mistral:7b", "gemma2:2b"]
+    # Priority order: gemma3:4b first, then gemma2:2b, then any available
+    priority_models = ["gemma3:4b", "gemma2:2b"]
 
     for model in priority_models:
         if model in available_models:
@@ -226,7 +254,7 @@ def handle_docker(use_better_model: bool = False) -> None:
     console = Console()
 
     # Determine which model to pull
-    model_to_pull = "mistral:7b" if use_better_model else "gemma2:2b"
+    model_to_pull = "gemma3:4b" if use_better_model else "gemma2:2b"
     model_description = (
         "better performance model" if use_better_model else "lightweight model"
     )
@@ -403,9 +431,9 @@ def handle_docker(use_better_model: bool = False) -> None:
                             console.print(
                                 "   ✅ gemma2:2b model is ready", style="green"
                             )
-                        if "mistral:7b" in models:
+                        if "gemma3:4b" in models:
                             console.print(
-                                "   ✅ mistral:7b model is ready", style="green"
+                                "   ✅ gemma3:4b model is ready", style="green"
                             )
 
                         # Show which model was just pulled
@@ -468,12 +496,12 @@ def handle_docker(use_better_model: bool = False) -> None:
 
         if use_better_model:
             console.print(
-                "5. Chat will automatically use mistral:7b for better responses"
+                "5. Chat will automatically use gemma3:4b for better responses"
             )
         else:
             console.print("5. Chat will use gemma2:2b for faster responses")
             console.print(
-                "   💡 Use 'cliven docker start --BP' for better model (mistral:7b)"
+                "   💡 Use 'cliven docker start --BP' for better model (gemma3:4b)"
             )
 
         # Show manual command if model pull failed
@@ -529,7 +557,7 @@ def handle_chat_existing(model_override: Optional[str] = None) -> None:
             selected_model = select_best_available_model()
             print(f"\n🤖 Auto-selected model: {selected_model}")
 
-        if selected_model == "mistral:7b":
+        if selected_model == "gemma3:4b":
             print("   🚀 Using high-performance model for better responses")
         elif selected_model == "gemma2:2b":
             print("   ⚡ Using lightweight model for faster responses")
@@ -612,7 +640,7 @@ def handle_chat_with_pdf(pdf_path: str, model_override: Optional[str] = None) ->
             selected_model = select_best_available_model()
             print(f"\n🤖 Auto-selected model: {selected_model}")
 
-        if selected_model == "mistral:7b":
+        if selected_model == "gemma3:4b":
             print("   🚀 Using high-performance model for better responses")
         elif selected_model == "gemma2:2b":
             print("   ⚡ Using lightweight model for faster responses")
@@ -1189,7 +1217,7 @@ def main():
         "--BP",
         "--better-performance",
         action="store_true",
-        help="Use mistral:7b model for better performance instead of gemma2:2b",
+        help="Use gemma3:4b model for better performance instead of gemma2:2b",
     )
 
     # Docker stop

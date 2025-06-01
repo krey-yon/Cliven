@@ -30,7 +30,13 @@ cd cliven
 pip install -e .
 ```
 
-### 3. Start Services with Docker
+### 3. Or, alternatively, install directly using pip 
+
+```bash
+pip install cliven
+```
+
+### 4. Start Services with Docker
 
 ```bash
 # Start with lightweight model (tinyllama:chat)
@@ -52,7 +58,7 @@ This will:
 ### 4. Process Your First PDF
 
 ```bash
-cliven ingest path/to/your/document.pdf
+cliven ingest "path/to/your/document.pdf"
 ```
 
 ### 5. Start Chatting
@@ -291,7 +297,7 @@ docker exec -it cliven_ollama ollama list
 
    # Manually pull model
    docker exec -it cliven_ollama ollama pull gemma3:4b
-   docker exec -it cliven_ollama ollama pull tinyllama:chat
+   docker exec -it cliven_ollama ollama pull gemma2:2b
    ```
 
 3. **ChromaDB connection failed**

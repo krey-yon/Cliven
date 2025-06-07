@@ -187,7 +187,7 @@ Cliven uses a modern RAG (Retrieval-Augmented Generation) architecture:
 
 - Python 3.8+
 - Docker & Docker Compose
-- 2GB+ RAM (for TinyLlama model)
+- 2GB+ RAM (for Gemma2 model)
 - 8GB+ RAM (for Gemma3 4B model)
 - 4GB+ disk space
 
